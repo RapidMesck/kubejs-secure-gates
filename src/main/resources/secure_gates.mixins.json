@@ -1,0 +1,13 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.nbp.secure_gates.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "ResultSlotMixin",
+    "ServerPlayerGameModeMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
