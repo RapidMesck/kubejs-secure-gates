@@ -2,14 +2,17 @@
 
 KubeJS Secure Gates is a NeoForge mod for Minecraft 1.21.1 that lets KubeJS scripts safely block player actions before they complete on the server.
 
-The mod is intentionally generic. It does not know about your progression system, quests, captures, ranks, permissions, or any other server-specific rule. It only exposes secure KubeJS events, and your scripts decide whether an action should be allowed or denied.
+The mod is intentionally generic. It does not know about your progression system, quests, ranks, permissions, or any server-specific rule. It only exposes secure KubeJS events, and your scripts decide whether an action should be allowed or denied.
 
 ## Features
 
 - Blocks craft result pickup before the item enters the player inventory.
-- Blocks right-click item use.
+- Hides blocked craft results from the client-side crafting output slot.
+- Blocks right-click item use, including item use on blocks.
 - Blocks block placement.
 - Blocks interaction with placed blocks.
+- Blocks breaking blocks with restricted items.
+- Blocks vanilla Crafter automatic crafting.
 - Exposes a generic `SecureGateEvents` KubeJS event group.
 - Sends denial messages to the player action bar.
 - Keeps all rule logic in KubeJS scripts.
@@ -55,8 +58,6 @@ SecureGateEvents.breakBlock(event => {})
 SecureGateEvents.autoCraft(event => {})
 ```
 
-`autoCraft` is registered for API stability, but automatic crafter interception is not part of the current MVP.
-
 ## Event Methods
 
 Every event exposes:
@@ -94,8 +95,10 @@ event.resultId
 event.block
 event.blockId
 
+event.recipeId
 event.pos
 event.hand
+event.level
 event.action
 
 event.denied
@@ -107,7 +110,7 @@ IDs are exposed as strings, for example:
 
 ```text
 minecraft:diamond_pickaxe
-minecraft:ender_pearl
+minecraft:flint_and_steel
 minecraft:beacon
 ```
 
@@ -123,16 +126,31 @@ SecureGateEvents.craft(event => {
 })
 ```
 
-This is enforced through `ResultSlot#mayPickup`, so normal click and shift-click pickup are blocked server-side.
+This is enforced through the result slot pickup path, so normal click and shift-click pickup are blocked server-side.
+
+## Craft Preview Visualization
+
+The `craft` event is also fired while the server calculates the visible crafting result.
+
+When a script denies the preview, the server synchronizes the output slot as empty to the client. This makes blocked recipes visually disappear from the crafting output slot while keeping the authoritative pickup check in place.
+
+You can distinguish preview from pickup with:
+
+```js
+event.action == 'CRAFT_PREVIEW'
+event.action == 'CRAFT_PICKUP'
+```
+
+Most scripts do not need to check `event.action`. A normal rule based on `event.resultId` applies to both preview and pickup.
 
 ## Item Use Gate
 
-Triggered when a player right-clicks with an item.
+Triggered when a player uses an item, including right-clicking a block with that item.
 
 ```js
 SecureGateEvents.useItem(event => {
-  if (event.itemId == 'minecraft:ender_pearl') {
-    event.deny('You cannot use Ender Pearls yet.')
+  if (event.itemId == 'minecraft:flint_and_steel') {
+    event.deny('You cannot use Flint and Steel yet.')
   }
 })
 ```
@@ -149,6 +167,18 @@ SecureGateEvents.placeBlock(event => {
 })
 ```
 
+## Block Interaction Gate
+
+Triggered when a player interacts with a placed block.
+
+```js
+SecureGateEvents.useBlock(event => {
+  if (event.blockId == 'minecraft:enchanting_table') {
+    event.deny('You cannot use Enchanting Tables yet.')
+  }
+})
+```
+
 ## Block Break Gate
 
 Triggered when a player attempts to break a block.
@@ -161,15 +191,100 @@ SecureGateEvents.breakBlock(event => {
 })
 ```
 
-## Block Interaction Gate
+## Automatic Crafter Gate
 
-Triggered when a player interacts with a placed block.
+Triggered when a vanilla Crafter attempts to craft and dispense an item.
+
+Automatic crafters do not have a player context, so `event.player` is `null`.
 
 ```js
-SecureGateEvents.useBlock(event => {
-  if (event.blockId == 'minecraft:enchanting_table') {
-    event.deny('You cannot use Enchanting Tables yet.')
+SecureGateEvents.autoCraft(event => {
+  if (event.resultId == 'minecraft:diamond_pickaxe') {
+    event.deny('This item cannot be crafted automatically.')
   }
+})
+```
+
+Available properties include:
+
+```js
+event.result
+event.resultId
+event.recipeId
+event.pos
+event.level
+event.player // null
+```
+
+## XP Level Test Script
+
+This example blocks diamond pickaxe and Flint and Steel until the player reaches XP level 10. It also blocks Dark Oak placement and prevents vanilla Crafters from producing protected outputs.
+
+```js
+const REQUIRED_LEVEL = 10
+
+const BLOCKED_CRAFTS = [
+  'minecraft:diamond_pickaxe',
+  'minecraft:flint_and_steel'
+]
+
+const BLOCKED_USE_ITEMS = [
+  'minecraft:flint_and_steel'
+]
+
+const BLOCKED_BREAK_ITEMS = [
+  'minecraft:diamond_pickaxe'
+]
+
+const BLOCKED_PLACE_BLOCKS = [
+  'minecraft:dark_oak_log',
+  'minecraft:dark_oak_wood',
+  'minecraft:stripped_dark_oak_log',
+  'minecraft:stripped_dark_oak_wood',
+  'minecraft:dark_oak_planks'
+]
+
+function hasRequiredLevel(player) {
+  return player && player.experienceLevel >= REQUIRED_LEVEL
+}
+
+function denyLevel(event, actionName) {
+  const level = event.player ? event.player.experienceLevel : 0
+  event.deny(`You need level ${REQUIRED_LEVEL} to ${actionName}. Current level: ${level}/${REQUIRED_LEVEL}.`)
+}
+
+SecureGateEvents.craft(event => {
+  if (!BLOCKED_CRAFTS.includes(event.resultId)) return
+  if (hasRequiredLevel(event.player)) return
+
+  denyLevel(event, `craft ${event.resultId}`)
+})
+
+SecureGateEvents.useItem(event => {
+  if (!BLOCKED_USE_ITEMS.includes(event.itemId)) return
+  if (hasRequiredLevel(event.player)) return
+
+  denyLevel(event, `use ${event.itemId}`)
+})
+
+SecureGateEvents.breakBlock(event => {
+  if (!BLOCKED_BREAK_ITEMS.includes(event.itemId)) return
+  if (hasRequiredLevel(event.player)) return
+
+  denyLevel(event, `break blocks with ${event.itemId}`)
+})
+
+SecureGateEvents.placeBlock(event => {
+  if (!BLOCKED_PLACE_BLOCKS.includes(event.blockId)) return
+  if (hasRequiredLevel(event.player)) return
+
+  denyLevel(event, `place ${event.blockId}`)
+})
+
+SecureGateEvents.autoCraft(event => {
+  if (!BLOCKED_CRAFTS.includes(event.resultId)) return
+
+  event.deny(`Automatic crafting is blocked for ${event.resultId}.`)
 })
 ```
 
@@ -245,14 +360,15 @@ SecureGateEvents.useBlock(event => {
 
 This mod blocks actions before they are completed by the server. It does not rely on removing items after the fact, inventory tick checks, or global recipe removal.
 
+Craft preview hiding is a server-synchronized UX feature. The secure server-side pickup gate still runs independently.
+
 The mod does not implement progression logic. All progression checks should live in KubeJS scripts.
 
 ## Current Limitations
 
-- `recipeId` tracking is not implemented yet; use `event.resultId` for craft rules.
-- Visual hiding of locked craft results is not implemented yet.
-- Automatic Crafter blocking is not implemented yet.
-- Custom modded crafting menus may need specific mixins if they do not use vanilla result slots.
+- Craft rules currently work best by `event.resultId`. `event.recipeId` is available for craft preview and automatic crafter, but full recipe tracking for every manual craft pickup path is still limited.
+- Custom modded crafting menus may need specific mixins if they do not use vanilla crafting/result-slot flows.
+- Automatic crafters do not have an associated player, so player-based checks must use separate logic for `autoCraft`.
 
 ## Development
 

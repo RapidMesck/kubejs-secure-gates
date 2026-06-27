@@ -4,6 +4,8 @@
   "package": "com.nbp.secure_gates.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
+    "CrafterBlockMixin",
+    "CraftingMenuMixin",
     "ResultSlotMixin",
     "ServerPlayerGameModeMixin"
   ],

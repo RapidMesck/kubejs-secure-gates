@@ -1,6 +1,7 @@
 package com.nbp.secure_gates.core;
 
 import com.nbp.secure_gates.SecureGates;
+import com.nbp.secure_gates.kubejs.AutoCraftGateKubeEvent;
 import com.nbp.secure_gates.kubejs.BreakBlockGateKubeEvent;
 import com.nbp.secure_gates.kubejs.CraftGateKubeEvent;
 import com.nbp.secure_gates.kubejs.GateKubeEvent;
@@ -39,6 +40,22 @@ public final class GateService {
         return post(SecureGateKubeJSEvents.CRAFT, new CraftGateKubeEvent(context));
     }
 
+    public static GateDecision checkCraftPreview(ServerPlayer player, ItemStack result, ResourceLocation recipeId) {
+        GateContext context = new GateContext(
+            GateAction.CRAFT_PREVIEW,
+            player,
+            player.level(),
+            null,
+            result.copy(),
+            recipeId,
+            null,
+            null,
+            null,
+            null
+        );
+
+        return post(SecureGateKubeJSEvents.CRAFT, new CraftGateKubeEvent(context));
+    }
     public static GateDecision checkUseItem(ServerPlayer player, Level level, ItemStack stack, InteractionHand hand) {
         GateContext context = new GateContext(
             GateAction.USE_ITEM,
@@ -126,6 +143,28 @@ public final class GateService {
         );
 
         return post(SecureGateKubeJSEvents.BREAK_BLOCK, new BreakBlockGateKubeEvent(context));
+    }
+
+    public static GateDecision checkAutoCraft(
+        Level level,
+        ItemStack result,
+        ResourceLocation recipeId,
+        BlockPos pos
+    ) {
+        GateContext context = new GateContext(
+            GateAction.AUTO_CRAFTER,
+            null,
+            level,
+            null,
+            result.copy(),
+            recipeId,
+            pos.immutable(),
+            null,
+            null,
+            null
+        );
+
+        return post(SecureGateKubeJSEvents.AUTO_CRAFT, new AutoCraftGateKubeEvent(context));
     }
 
     private static GateDecision post(EventHandler handler, GateKubeEvent event) {
